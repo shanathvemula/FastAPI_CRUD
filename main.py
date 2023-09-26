@@ -128,4 +128,4 @@ def create_user(user: UserCreate):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host='192.168.12.70', port=8000, reload=True, debug=True, workers=3)
+    uvicorn.run("main:app", host='127.0.0.1', port=8000, reload=True, debug=True, workers=3)
