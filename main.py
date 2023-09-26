@@ -1,5 +1,6 @@
 # Importing Libraries
 import dateutil.utils
+import pymongo
 
 import uvicorn
 from fastapi import FastAPI, APIRouter, status
@@ -8,7 +9,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 # from pymongo import MongoClient
 from Schemas import User, Blog, UserCreate
-from database import DBClient, ObjectId
+from database import DBClient, ObjectId, DBName, Collection, ASCENDING
 
 # Initializing the App
 app = FastAPI()
@@ -40,7 +41,7 @@ def read_item(item_id: int, q: str):
 def create_blog(request: Blog):
     try:
         bl = dict(request)
-        res = DBClient['blogs']['blog'].insert_one(dict(bl))
+        res = DBClient[DBName][Collection].insert_one(dict(bl))
         bl['_id'] = str(res.inserted_id)
         return bl
     except Exception as e:
@@ -50,9 +51,14 @@ def create_blog(request: Blog):
 # Getting By Oid
 @app.get('/blog/{Oid}', status_code=status.HTTP_200_OK)
 def get_blog(Oid):
-    res = DBClient['blogs']['blog'].find_one({'_id': ObjectId(Oid)})
-    res['_id'] = str(res['_id'])
-    return res
+    try:
+        res = DBClient[DBName][Collection].find_one({'_id': ObjectId(Oid)})
+        if res == None:
+            return {"Message": "Document does n't exists with " + str(Oid)}
+        res['_id'] = str(res['_id'])
+        return res
+    except Exception as e:
+        return {"Error": str(e)}
 
 
 # Update By Oid
@@ -60,7 +66,7 @@ def get_blog(Oid):
 @app.patch('/blog/{Oid}')
 def blog_update(Oid, request: Blog):
     try:
-        res = DBClient['blogs']['blog'].update_one({'_id': ObjectId(Oid)}, {'$set': dict(request)})
+        res = DBClient[DBName][Collection].update_one({'_id': ObjectId(Oid)}, {'$set': dict(request)})
         if res.raw_result['updatedExisting']:
             return {"Message": "Data Updated Successfully"}
         return {"Error": "Data Not Updated"}
@@ -71,7 +77,7 @@ def blog_update(Oid, request: Blog):
 # Delete By Oid
 @app.delete('/blog/{Oid}')
 def blog_delete(Oid):
-    res = DBClient['blogs']['blog'].delete_one({'_id': ObjectId(Oid)})
+    res = DBClient[DBName][Collection].delete_one({'_id': ObjectId(Oid)})
     if res.deleted_count:
         return {"Message": "Blog is deleted"}
     else:
@@ -81,11 +87,38 @@ def blog_delete(Oid):
 # Additional Operations
 # List Operations
 @app.get('/blogs/', status_code=status.HTTP_200_OK)
-def get_blogs_list():
-    res = list(DBClient['blogs']['blog'].find())
+def get_blogs_list(page: int, size: int):
+    res = list(DBClient[DBName][Collection].find(sort=[('id', ASCENDING)]).skip(page * size).limit(size))
+    count = len(list(DBClient[DBName][Collection].find()))
     for i in res:
         i['_id'] = str(i['_id'])
-    return res
+    return dict(count=count, Page=page, data=res)
+
+
+@app.post('/blogs/')
+def filter_blogs(request: dict):
+    page = request['page']
+    size = request['size']
+    data = request['filters']
+    filters = [{k: data[k]} for k in data.keys()]
+    count = len(list(DBClient[DBName][Collection].find({'$and': filters})))
+    res = list(DBClient[DBName][Collection].find({'$and': filters}).skip(page * size).limit(size))
+    for i in res:
+        i['_id'] = str(i['_id'])
+    return dict(count=count, Page=page, data=res)
+
+
+@app.put('/blogs/')
+def search_blogs(request: dict):
+    page = request['page']
+    size = request['size']
+    data = request['filters']
+    filters = [{k: data[k]} for k in data.keys()]
+    count = len(list(DBClient[DBName][Collection].find({'$or': filters})))
+    res = list(DBClient[DBName][Collection].find({'$or': filters}).skip(page * size).limit(size))
+    for i in res:
+        i['_id'] = str(i['_id'])
+    return dict(count=count, Page=page, data=res)
 
 
 @app.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED)
