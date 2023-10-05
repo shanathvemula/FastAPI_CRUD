@@ -5,3 +5,4 @@ DBClient = MongoClient("mongodb://localhost:27017/")
 
 DBName = 'blogs'
 Collection = 'blog'
+UserCollection = 'user'
