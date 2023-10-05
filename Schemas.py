@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from typing import Optional
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -30,9 +30,11 @@ class Blog(BaseModel):
 
 
 class UserCreate(BaseModel):
-    email: str
+    username: str | None
+    phoneno: int | None
+    email: str | None
     password: str = Field(min_length=8, max_length=25)
-    age: int = Field(gt=17, lt=101)
+    age: None | int = Field(gt=17, lt=101)
 
 class User(UserCreate):
     id: UUID = Field(default_factory=uuid4)
