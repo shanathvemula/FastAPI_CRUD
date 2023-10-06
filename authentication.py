@@ -5,51 +5,71 @@ import jwt
 from Schemas import User
 import datetime
 from database import DBClient, DBName
-from functools import wraps
 
 from fastapi import Request, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 secret = 'c427efa41a05507e7bd9637270ff5a20db6ad20f2dbb0cf8d5bbf5af4f89aea5'
 algorithm = 'HS256'
 AccessTimeDelta = 600  # Seconds
-RefreshTimeDelta = 60  # Seconds
+RefreshTimeDelta = 600  # Seconds
 
 
 # Generating Access Token
-def AccessToken(user: User):
-    user = dict(user)
-    encode = jwt.encode({'username': user['username'],
-                         'exp': datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(
-                             seconds=AccessTimeDelta)},
-                        key=secret,
-                        algorithm=algorithm)
-    print(datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(minutes=1))
-    print(encode)
-    return {'token': encode}
+def AccessToken(cred: dict):
+    try:
+        user = list(
+            DBClient[DBName]['user'].find({'$and': [
+                {'$or': [{'username': cred['username']}, {'phoneno': cred['username']}, {'email': cred['username']}]},
+                {'password': cred['password']}]}))
+        # print(user[0]['username'])
+        if user:
+            encode = jwt.encode({'username': user[0]['username'], 'iat': datetime.datetime.now(tz=datetime.timezone.utc),
+                                 'exp': datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(
+                                     seconds=AccessTimeDelta)},
+                                key=secret,
+                                algorithm=algorithm)
+            # print(datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(minutes=1))
+            # print(encode)
+            return {'token': encode}
+        else:
+            return {"Error": "With given credential user doesn't exists"}
 
-    # @wraps(f)
-    # def decorated(*args, **kwargs):
-    #     print("OK")
-    #     return f
-    # return decorated
+        # @wraps(f)
+        # def decorated(*args, **kwargs):
+        #     print("OK")
+        #     return f
+        # return decorated
+    except Exception as e:
+        return JSONResponse(content={"Error": str(e)}, status_code=400)
 
 
 # Refresh Access Token
 def RefreshToken(data):
-    d = jwt.decode(data['token'], secret, algorithm)
-    print(d)
-    encode = jwt.encode({'username': d['username'],
-                         'exp': datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(
-                             seconds=RefreshTimeDelta)},
-                        key=secret, algorithm=algorithm)
-    return {'token': encode}
+    try:
+        d = jwt.decode(data['token'], secret, algorithm)
+        # print(d)
+        encode = jwt.encode({'username': d['username'], 'iat': datetime.datetime.now(tz=datetime.timezone.utc),
+                             'exp': datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(
+                                 seconds=RefreshTimeDelta)},
+                            key=secret, algorithm=algorithm)
+        return JSONResponse(content={'token': encode}, status_code=200)
+    except jwt.ExpiredSignatureError as e:
+        return JSONResponse(content={"Error": str(e)}, status_code=401)
+    except Exception as e:
+        return JSONResponse(content={"Error": str(e)}, status_code=400)
 
 
 # Verify Access Token
 def VerifyToken(data):
-    d = jwt.decode(data['token'], secret, algorithm, verify_exp=data['token'])
-    return data
+    try:
+        d = jwt.decode(data['token'], secret, algorithm, verify_exp=data['token'])
+        return JSONResponse(content=data, status_code=200)
+    except jwt.ExpiredSignatureError as e:
+        return JSONResponse(content={"Error": str(e)}, status_code=401)
+    except Exception as e:
+        return JSONResponse(content={"Error": str(e)}, status_code=400)
 
 
 def decodeJWT(token: str) -> dict:
@@ -69,6 +89,7 @@ class jwtBearer(HTTPBearer):
     async def __call__(self, request: Request):
         credentials: HTTPAuthorizationCredentials = await super(jwtBearer, self).__call__(request)
         if credentials:
+            # print(credentials)
             if not credentials.scheme == 'Bearer':
                 raise HTTPException(status_code=403, detail="Invalid or Expered Token")
             return credentials.credentials
@@ -79,5 +100,5 @@ class jwtBearer(HTTPBearer):
         isTokenValid: bool = False  # Default Flag
         payload = decodeJWT(jwtoken)
         if payload:
-            isTokenValid =True
+            isTokenValid = True
         return isTokenValid
