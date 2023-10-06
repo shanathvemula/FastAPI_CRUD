@@ -10,13 +10,20 @@ from typing import Optional
 from uuid import UUID, uuid4
 # from pymongo import MongoClient
 from Schemas import User, Blog, UserCreate, SecretStr
-from database import DBClient, ObjectId, DBName, Collection, ASCENDING
+from database import DBClient, ObjectId, DBName, Collection, ASCENDING, UserCollection
 from authentication import AccessToken, RefreshToken, VerifyToken, jwtBearer
+
+# CORSMiddleware for Cross-Origin Resource Sharing
+from fastapi.middleware.cors import CORSMiddleware
 
 # from fastapi.security
 
 # Initializing the App
 app = FastAPI()
+
+origins = ['*']
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=['*'],
+                   allow_headers=['*'])
 
 
 # Connecting to db
@@ -25,40 +32,43 @@ app = FastAPI()
 # print(list(DBClient[DBName]['user'].find()))
 @app.post('/access-token')
 def token(cred: dict):
-    user = list(
-        DBClient[DBName]['user'].find({'$and': [{'username': cred['username']}, {'password': cred['password']}]}))
-    if len(user) == 1:
-        return AccessToken(user[0])
-    else:
-        return {"Error": "With given credential user doesn't exists"}
+    # user = list(
+    #     DBClient[DBName]['user'].find({'$and': [{'username': cred['username']}, {'password': cred['password']}]}))
+    # if len(user) == 1:
+    return AccessToken(cred)
+    # else:
+    #     return {"Error": "With given credential user doesn't exists"}
 
 
 @app.post('/refresh-token')
 def Refresh_Token(request: dict):
-    try:
-        if request['token']:
-            vt = RefreshToken(request)
-            return JSONResponse(status_code=200, content=vt)
-        else:
-            raise ValueError("Token required")
-    except Exception as e:
-        if str(e) == 'Signature has expired':
-            return JSONResponse(content={"Error": str(e)}, status_code=401)
-        return JSONResponse(content={"Error": str(e)}, status_code=400)
+    return RefreshToken(request)
+    # try:
+    #     if request['token']:
+    #         vt = RefreshToken(request)
+    #         return JSONResponse(status_code=200, content=vt)
+    #     else:
+    #         raise ValueError("Token required")
+    # except Exception as e:
+    #     if str(e) == 'Signature has expired':
+    #         return JSONResponse(content={"Error": str(e)}, status_code=401)
+    #     return JSONResponse(content={"Error": str(e)}, status_code=400)
 
 
 @app.post('/verify-token')
 def Verify_Token(request: dict):
-    try:
-        if request['token']:
-            vt = VerifyToken(request)
-            return JSONResponse(status_code=200, content=vt)
-        else:
-            raise ValueError("Token required")
-    except Exception as e:
-        if str(e) == 'Signature has expired':
-            return JSONResponse(content={"Error": str(e)}, status_code=401)
-        return JSONResponse(content={"Error": str(e)}, status_code=400)
+    return VerifyToken(request)
+    # try:
+    #     if request['token']:
+    #         vt = VerifyToken(request)
+    #         return JSONResponse(status_code=200, content=vt)
+    #     else:
+    #         raise ValueError("Token required")
+    # except Exception as e:
+    #     if str(e) == 'Signature has expired':
+    #         return JSONResponse(content={"Error": str(e)}, status_code=401)
+    #     return JSONResponse(content={"Error": str(e)}, status_code=400)
+
 
 # Default Route
 @app.get("/")  # decorator for the get request
@@ -137,9 +147,18 @@ def get_blogs_list(page: int, size: int):
     return dict(count=count, Page=page, data=res)
 
 
-@app.post('/blogs/', dependencies=[Depends(jwtBearer())])
+class testDepends:
+    def __init__(self, dbname: str):
+        self.dbname = dbname
+
+    async def __call__(self, request: Request):
+        print(self.dbname)
+        print(request.headers)
+
+
+@app.post('/blogs/', dependencies=[Depends(jwtBearer()), Depends(testDepends(dbname='blogs'))])
 def filter_blogs(data: dict, request: Request):
-    print(request.headers)
+    # print(request.headers)
     page = data['page']
     size = data['size']
     filters_data = data['filters']
@@ -151,7 +170,7 @@ def filter_blogs(data: dict, request: Request):
     return dict(count=count, Page=page, data=res)
 
 
-@app.put('/blogs/', dependencies=[Depends(jwtBearer())])
+@app.put('/blogs/')
 def search_blogs(data: dict, request: Request):
     print(request.headers)
     page = data['page']
@@ -165,7 +184,7 @@ def search_blogs(data: dict, request: Request):
     return dict(count=count, Page=page, data=res)
 
 
-@app.patch('/blogs/', dependencies=[Depends(jwtBearer())])
+@app.patch('/blogs/')
 def list_blogs_in_date_range(request: dict):
     page = request['page']
     size = request['size']
@@ -181,10 +200,19 @@ def list_blogs_in_date_range(request: dict):
     return dict(count=count, Page=page, data=res)
 
 
-@app.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED)
+@app.post("/user/", status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate):
-    created_user = User(**user.model_dump())
-    return created_user
+    try:
+        usr = dict(user)
+        res = DBClient[DBName][UserCollection].insert_one(dict(user))
+        usr['_id'] = str(res.inserted_id)
+        # print(user)
+        # created_user = User(user)
+        # return created_user
+        return usr
+    except Exception as e:
+        print(e)
+        return JSONResponse({"Error": "Document is not created"}, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 if __name__ == "__main__":
