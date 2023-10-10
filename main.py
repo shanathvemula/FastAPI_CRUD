@@ -1,5 +1,6 @@
 # Importing Libraries
 import dateutil.utils
+import jwt
 import pymongo
 
 import uvicorn
@@ -11,7 +12,7 @@ from uuid import UUID, uuid4
 # from pymongo import MongoClient
 from Schemas import User, Blog, UserCreate, SecretStr
 from database import DBClient, ObjectId, DBName, Collection, ASCENDING, UserCollection
-from authentication import AccessToken, RefreshToken, VerifyToken, jwtBearer
+from authentication import AccessToken, RefreshToken, VerifyToken, jwtBearer, decodeJWT
 
 # CORSMiddleware for Cross-Origin Resource Sharing
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,12 +27,37 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True
                    allow_headers=['*'])
 
 
+class testDepends:
+    def __init__(self, dbname: str):
+        self.dbname = dbname
+
+    async def __call__(self, request: Request):
+        # print(self.dbname)
+        # print(request.headers)
+        data = decodeJWT(request.headers['authorization'].replace('Bearer ', ''))
+        user = DBClient[self.dbname]['user'].find_one({'username': data['username']})
+        # print(user['Additional']['Login'])
+        # print(request.headers['host'])
+        if request.headers['host'] not in user['Additional']['Login'] and len(user['Additional']['Login']) == 2:
+            raise HTTPException(status_code=403, detail="You are login device limit over")
+        elif request.headers['host'] not in user['Additional']['Login']:
+            user['Additional']['Login'].append(request.headers['host'])
+            u = DBClient[self.dbname]['user'].update_one({'_id': user['_id']}, {"$set": user})
+            # print(u.raw_result)
+        # raise jwt.InvalidAudienceError()
+        # user['Additional'] = [{'Login': [request.headers['host']]}]
+        # print(user)
+        # u = DBClient[self.dbname]['user'].update_one({'_id': user['_id']}, {"$set": user})
+        # print(u.raw_result)
+
+
 # Connecting to db
 # DBClient = MongoClient('mongodb://localhost:27017/')
 
 # print(list(DBClient[DBName]['user'].find()))
 @app.post('/access-token')
-def token(cred: dict):
+def token(cred: dict, request: Request):
+    cred['host']=request.headers['host']
     # user = list(
     #     DBClient[DBName]['user'].find({'$and': [{'username': cred['username']}, {'password': cred['password']}]}))
     # if len(user) == 1:
@@ -40,7 +66,7 @@ def token(cred: dict):
     #     return {"Error": "With given credential user doesn't exists"}
 
 
-@app.post('/refresh-token')
+@app.post('/refresh-token')  # , dependencies=[Depends(testDepends(DBName))]
 def Refresh_Token(request: dict):
     return RefreshToken(request)
     # try:
@@ -138,36 +164,33 @@ def blog_delete(Oid):
 
 # Additional Operations
 # List Operations
-@app.get('/blogs/', status_code=status.HTTP_200_OK)
+@app.get('/blogs/', dependencies=[Depends(jwtBearer()), Depends(testDepends(dbname=DBName))])
 def get_blogs_list(page: int, size: int):
-    res = list(DBClient[DBName][Collection].find(sort=[('id', ASCENDING)]).skip(page * size).limit(size))
-    count = len(list(DBClient[DBName][Collection].find()))
-    for i in res:
-        i['_id'] = str(i['_id'])
-    return dict(count=count, Page=page, data=res)
+    try:
+        res = list(DBClient[DBName][Collection].find(sort=[('id', ASCENDING)]).skip(page * size).limit(size))
+        count = len(list(DBClient[DBName][Collection].find()))
+        for i in res:
+            i['_id'] = str(i['_id'])
+        return dict(count=count, Page=page, data=res)
+    except Exception as e:
+        return e
 
 
-class testDepends:
-    def __init__(self, dbname: str):
-        self.dbname = dbname
-
-    async def __call__(self, request: Request):
-        print(self.dbname)
-        print(request.headers)
-
-
-@app.post('/blogs/', dependencies=[Depends(jwtBearer()), Depends(testDepends(dbname='blogs'))])
+@app.post('/blogs/', dependencies=[Depends(jwtBearer()), Depends(testDepends(dbname=DBName))])
 def filter_blogs(data: dict, request: Request):
-    # print(request.headers)
-    page = data['page']
-    size = data['size']
-    filters_data = data['filters']
-    filters = [{k: filters_data[k]} for k in filters_data.keys()]
-    count = len(list(DBClient[DBName][Collection].find({'$and': filters})))
-    res = list(DBClient[DBName][Collection].find({'$and': filters}).skip(page * size).limit(size))
-    for i in res:
-        i['_id'] = str(i['_id'])
-    return dict(count=count, Page=page, data=res)
+    try:
+        # print(request.headers)
+        page = data['page']
+        size = data['size']
+        filters_data = data['filters']
+        filters = [{k: filters_data[k]} for k in filters_data.keys()]
+        count = len(list(DBClient[DBName][Collection].find({'$and': filters})))
+        res = list(DBClient[DBName][Collection].find({'$and': filters}).skip(page * size).limit(size))
+        for i in res:
+            i['_id'] = str(i['_id'])
+        return dict(count=count, Page=page, data=res)
+    except Exception as e:
+        return JSONResponse({"Error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @app.put('/blogs/')
