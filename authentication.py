@@ -11,7 +11,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 secret = 'c427efa41a05507e7bd9637270ff5a20db6ad20f2dbb0cf8d5bbf5af4f89aea5'
 algorithm = 'HS256'
-AccessTimeDelta = 60  # Seconds
+AccessTimeDelta = 600  # Seconds
 RefreshTimeDelta = 600  # Seconds
 
 
@@ -23,11 +23,12 @@ def AccessToken(cred: dict):
                 {'$or': [{'username': cred['username']}, {'phoneno': cred['username']}, {'email': cred['username']}]},
                 {'password': cred['password']}]}))
         # print(user[0]['Additional'] == {} or 'Login' not in user[0]['Additional'].keys())
-        if user[0]['Additional'] == {} or 'Login' not in user[0]['Additional'].keys():
+        if user[0]['Additional'] == [] or 'Login' not in user[0]['Additional'].keys():
             user[0]['Additional']['Login'] = [cred['host']]
             DBClient[DBName][UserCollection].update_one({'_id': user[0]['_id']}, {'$set': user[0]})
         # print(user[0]['Additional']['Login'])
         # print((cred['host'] not in user[0]['Additional']['Login']) and (len(user[0]['Additional']['Login']) < 2))
+        print(user[0]['Additional'])
         if cred['host'] not in user[0]['Additional']['Login'] and len(user[0]['Additional']['Login']) < 2:
             user[0]['Additional']['Login'].append(cred['host'])
             DBClient[DBName][UserCollection].update_one({'_id': user[0]['_id']}, {'$set': user[0]})
@@ -101,6 +102,7 @@ class jwtBearer(HTTPBearer):
         super(jwtBearer, self.__init__(auto_error=auto_Error))
 
     async def __call__(self, request: Request):
+        print('jwt')
         credentials: HTTPAuthorizationCredentials = await super(jwtBearer, self).__call__(request)
         if credentials:
             if not credentials.scheme == 'Bearer':

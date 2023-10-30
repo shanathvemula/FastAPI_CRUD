@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from Schemas import User, Blog, UserCreate, SecretStr
 from database import DBClient, ObjectId, DBName, Collection, ASCENDING, UserCollection
 from authentication import AccessToken, RefreshToken, VerifyToken, jwtBearer, decodeJWT
+from California_House_Pricing.California_House_Pricing import CHP_Prediction, CHP
 
 # CORSMiddleware for Cross-Origin Resource Sharing
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,7 +58,7 @@ class testDepends:
 # print(list(DBClient[DBName]['user'].find()))
 @app.post('/access-token')
 def token(cred: dict, request: Request):
-    cred['host']=request.headers['host']
+    cred['host'] = request.headers['host']
     # user = list(
     #     DBClient[DBName]['user'].find({'$and': [{'username': cred['username']}, {'password': cred['password']}]}))
     # if len(user) == 1:
@@ -223,10 +224,14 @@ def list_blogs_in_date_range(request: dict):
     return dict(count=count, Page=page, data=res)
 
 
-@app.post("/user/", status_code=status.HTTP_201_CREATED)
-def create_user(user: UserCreate):
+@app.post("/user/", status_code=status.HTTP_201_CREATED,
+          dependencies=[Depends(jwtBearer()), Depends(testDepends(dbname=DBName))])
+def create_user(user: UserCreate, request: Request):
     try:
         usr = dict(user)
+        if usr['Additional'] == ['string']:
+            usr['Additional'] = {}
+        print(request.headers)
         res = DBClient[DBName][UserCollection].insert_one(dict(user))
         usr['_id'] = str(res.inserted_id)
         # print(user)
@@ -238,5 +243,14 @@ def create_user(user: UserCreate):
         return JSONResponse({"Error": "Document is not created"}, status_code=status.HTTP_400_BAD_REQUEST)
 
 
+from California_House_Pricing.California_House_Pricing import CHP, CHP_Prediction
+
+
+@app.post("/chp_predict_api/")
+def CHP_Predict_API(request: Request, chp: CHP):
+    result = CHP_Prediction(chp)
+    return JSONResponse({"California_House_Pricing": result})
+
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host='127.0.0.1', port=8000, reload=True, debug=True, workers=3)
+    uvicorn.run("main:app", host='127.0.0.1', port=8000, reload=True, workers=3)
