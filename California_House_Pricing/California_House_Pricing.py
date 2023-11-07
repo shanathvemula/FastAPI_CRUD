@@ -20,7 +20,11 @@ class CHP(BaseModel):
 
 
 def CHP_Prediction(chp: CHP):
-    data = chp.dict()
+    print(type(chp))
+    try:
+        data = chp.dict()
+    except:
+        data = chp
     regmodel = pickle.load(open(BASE_DIR+'\\regmodel.pkl', 'rb'))
     scalar = pickle.load(open(BASE_DIR+'\\scaling.pkl', 'rb'))
     new_data = scalar.transform(np.array(list(data.values())).reshape(1, -1))

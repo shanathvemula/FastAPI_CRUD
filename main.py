@@ -4,10 +4,11 @@ import jwt
 import pymongo
 
 import uvicorn
-from fastapi import FastAPI, APIRouter, status, HTTPException, Request, Response, Depends
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, APIRouter, status, HTTPException, Request, Response, Depends, Form
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Annotated
 from uuid import UUID, uuid4
 # from pymongo import MongoClient
 from Schemas import User, Blog, UserCreate, SecretStr
@@ -26,6 +27,14 @@ app = FastAPI()
 origins = ['*']
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=['*'],
                    allow_headers=['*'])
+
+templates = Jinja2Templates(directory="templates")
+
+
+# Default Route
+@app.get("/")  # decorator for the get request
+def home(request: Request):
+    return templates.TemplateResponse('home.html', {"request": request})
 
 
 class testDepends:
@@ -95,12 +104,6 @@ def Verify_Token(request: dict):
     #     if str(e) == 'Signature has expired':
     #         return JSONResponse(content={"Error": str(e)}, status_code=401)
     #     return JSONResponse(content={"Error": str(e)}, status_code=400)
-
-
-# Default Route
-@app.get("/")  # decorator for the get request
-def home():
-    return {"Message": "Request call from get"}
 
 
 @app.post('/')
@@ -224,8 +227,8 @@ def list_blogs_in_date_range(request: dict):
     return dict(count=count, Page=page, data=res)
 
 
-@app.post("/user/", status_code=status.HTTP_201_CREATED,
-          dependencies=[Depends(jwtBearer()), Depends(testDepends(dbname=DBName))])
+@app.post("/user/", status_code=status.HTTP_201_CREATED)  # ,
+# dependencies=[Depends(jwtBearer()), Depends(testDepends(dbname=DBName))])
 def create_user(user: UserCreate, request: Request):
     try:
         usr = dict(user)
@@ -243,13 +246,36 @@ def create_user(user: UserCreate, request: Request):
         return JSONResponse({"Error": "Document is not created"}, status_code=status.HTTP_400_BAD_REQUEST)
 
 
-from California_House_Pricing.California_House_Pricing import CHP, CHP_Prediction
-
-
 @app.post("/chp_predict_api/")
 def CHP_Predict_API(request: Request, chp: CHP):
     result = CHP_Prediction(chp)
     return JSONResponse({"California_House_Pricing": result})
+
+
+@app.get("/chp")
+def chp_home(request: Request):
+    return templates.TemplateResponse('California_House_Prediction.html', {"request": request})
+
+
+@app.post("/chp_predict/", response_class=HTMLResponse)
+async def chp_predict(request: Request, MedInc: Annotated[str, Form()], HouseAge: Annotated[str, Form()],
+                      AveRooms: Annotated[str, Form()], AveBedrms: Annotated[str, Form()],
+                      Population: Annotated[str, Form()], AveOccup: Annotated[str, Form()],
+                      Latitude: Annotated[str, Form()], Longitude: Annotated[str, Form()]):
+    # print("MedInc", MedInc)
+    data = {
+        "MedInc": MedInc,
+        "HouseAge": HouseAge,
+        "AveRooms": AveRooms,
+        "AveBedrms": AveBedrms,
+        "Population": Population,
+        "AveOccup": AveOccup,
+        "Latitude": Latitude,
+        "Longitude": Longitude
+    }
+    result = CHP_Prediction(CHP(**data))
+    return templates.TemplateResponse('California_House_Prediction.html',
+                                      {"request": request, "prediction_text": result})
 
 
 if __name__ == "__main__":
